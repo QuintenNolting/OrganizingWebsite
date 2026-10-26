@@ -12,6 +12,7 @@ $servername = "";
 $username = "";
 $password = "";
 $dbname   = "";
+$cardkey = "";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 
@@ -188,8 +189,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_card'])) {
     $cardid = (int)$_POST['cardid'];
     $newtext = trim($_POST['cardtext']);
 
-    $stmt = $conn->prepare("UPDATE cards SET cardtext = ? WHERE cardid = ?");
-    $stmt->bind_param("si", $newtext, $cardid);
+    $stmt = $conn->prepare("
+        UPDATE cards c
+        JOIN projectitems pi ON c.cardid = pi.cardid
+        SET c.cardtext = TO_BASE64(AES_ENCRYPT(?, ?))
+        WHERE c.cardid = ? AND pi.projectid = ?
+    ");
+    $stmt->bind_param("ssii", $newtext, $cardkey, $cardid, $projectid);
     if (!$stmt->execute()) {
         $error = "Something went wrong";
     }
@@ -198,12 +204,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['delete_card'])) {
 }
 
 $stmt = $conn->prepare("
-    SELECT c.cardid, c.cardtext, c.width, c.height, c.location_x, c.location_y
+    SELECT c.cardid,
+           COALESCE(CONVERT(AES_DECRYPT(FROM_BASE64(c.cardtext), ?) USING utf8mb4), '') AS cardtext,
+           c.width, c.height, c.location_x, c.location_y
     FROM cards c
     JOIN projectitems pi ON c.cardid = pi.cardid
     WHERE pi.projectid = ?
 ");
-$stmt->bind_param("i", $projectid);
+$stmt->bind_param("si", $cardkey, $projectid);
 $stmt->execute();
 $result = $stmt->get_result();
 
